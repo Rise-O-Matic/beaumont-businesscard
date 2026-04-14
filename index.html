@@ -1069,14 +1069,30 @@ function cardBackHTML() {
 }
 
 // ═══ Build dropdown pickers ═══
-const PICKER_DEFS = [
-  { key: 'frontBg',   label: 'Front BG',  options: BG_OPTIONS },
-  { key: 'logo',      label: 'Logo',       options: BRAND },
-  { key: 'accent1',   label: 'Accent 1',   options: BRAND },
-  { key: 'accent2',   label: 'Accent 2',   options: BRAND },
-  { key: 'textColor', label: 'Text',        options: BRAND },
-  { key: 'footer',    label: 'Footer',      options: BRAND },
+const PICKER_ROWS = [
+  {
+    label: 'Front',
+    pickers: [
+      { key: 'frontBg',      label: 'Background', options: BG_OPTIONS },
+      { key: 'frontLogo',    label: 'Logo',       options: LOGO_COLORS },
+      { key: 'frontAccent1', label: 'Accent 1',   options: BRAND },
+      { key: 'frontAccent2', label: 'Accent 2',   options: BRAND },
+    ],
+  },
+  {
+    label: 'Back',
+    pickers: [
+      { key: 'backLogo',    label: 'Logo',     options: LOGO_COLORS },
+      { key: 'backAccent1', label: 'Accent 1', options: BRAND },
+      { key: 'backAccent2', label: 'Accent 2', options: BRAND },
+      { key: 'backText',    label: 'Text',     options: BRAND },
+      { key: 'backFooter',  label: 'Footer',   options: BRAND },
+    ],
+  },
 ];
+
+// Flat list for iteration
+const PICKER_DEFS = PICKER_ROWS.flatMap(row => row.pickers);
 
 const pickersContainer = document.getElementById('builder-pickers');
 
@@ -1087,50 +1103,144 @@ function getSwatchColor(name, options) {
   return '#ccc';
 }
 
-PICKER_DEFS.forEach(def => {
-  const picker = document.createElement('div');
-  picker.className = 'picker';
-  picker.id = `picker-${def.key}`;
+function getCheckBg(pickerKey) {
+  const rule = CONTRAST_RULES[pickerKey];
+  if (!rule) return null;
+  if (rule.bgSource === 'front') return BG_CHECK_COLORS[state.frontBg] || '#FFFFFF';
+  const isDark = BG_OPTIONS[state.frontBg] && BG_OPTIONS[state.frontBg].dark;
+  return isDark ? BACK_BG_DARK : BACK_BG_LIGHT;
+}
 
-  const swatch = document.createElement('div');
-  swatch.className = 'picker-swatch';
-  swatch.style.background = getSwatchColor(state[def.key], def.options);
+function passesContrast(pickerKey, colorName) {
+  const rule = CONTRAST_RULES[pickerKey];
+  if (!rule) return true;
+  const hex = BRAND[colorName];
+  if (!hex) return true;
+  const bgHex = getCheckBg(pickerKey);
+  return contrastRatio(hex, bgHex) >= rule.threshold;
+}
 
-  const select = document.createElement('select');
-  select.className = 'picker-select';
-  select.title = def.label;
-  Object.keys(def.options).forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    if (name === state[def.key]) opt.selected = true;
-    select.appendChild(opt);
+// Build the two-row picker UI
+PICKER_ROWS.forEach(rowDef => {
+  const row = document.createElement('div');
+  row.className = 'picker-row';
+
+  const rowLabel = document.createElement('span');
+  rowLabel.className = 'picker-row-label';
+  rowLabel.textContent = rowDef.label;
+  row.appendChild(rowLabel);
+
+  rowDef.pickers.forEach(def => {
+    const picker = document.createElement('div');
+    picker.className = 'picker';
+    picker.id = `picker-${def.key}`;
+
+    const swatch = document.createElement('div');
+    swatch.className = 'picker-swatch';
+    swatch.style.background = getSwatchColor(state[def.key], def.options);
+
+    const select = document.createElement('select');
+    select.className = 'picker-select';
+    select.title = def.label;
+
+    // For frontLogo when dark BG, show locked "White (auto)"
+    const isDarkBg = BG_OPTIONS[state.frontBg] && BG_OPTIONS[state.frontBg].dark;
+    if (def.key === 'frontLogo' && isDarkBg) {
+      const opt = document.createElement('option');
+      opt.value = state[def.key];
+      opt.textContent = 'White (auto)';
+      opt.selected = true;
+      select.appendChild(opt);
+      select.disabled = true;
+      swatch.style.background = '#FFFFFF';
+    } else {
+      Object.keys(def.options).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        if (name === state[def.key]) opt.selected = true;
+        // Hard-filter: disable options that fail contrast
+        const rule = CONTRAST_RULES[def.key];
+        if (rule && rule.mode === 'hard' && !passesContrast(def.key, name)) {
+          opt.disabled = true;
+          opt.textContent = name + ' (low contrast)';
+        }
+        select.appendChild(opt);
+      });
+    }
+
+    select.addEventListener('change', () => {
+      state[def.key] = select.value;
+      swatch.style.background = getSwatchColor(select.value, def.options);
+      // When frontBg changes, rebuild all dropdowns (contrast thresholds shift)
+      if (def.key === 'frontBg') {
+        refreshSwatchUI();
+      } else {
+        updateContrastWarnings();
+      }
+      applyState();
+    });
+
+    const label = document.createElement('span');
+    label.className = 'picker-label';
+    label.textContent = def.label;
+
+    picker.appendChild(swatch);
+    picker.appendChild(select);
+    picker.appendChild(label);
+    row.appendChild(picker);
   });
 
-  select.addEventListener('change', () => {
-    state[def.key] = select.value;
-    swatch.style.background = getSwatchColor(select.value, def.options);
-    applyState();
-  });
-
-  const label = document.createElement('span');
-  label.className = 'picker-label';
-  label.textContent = def.label;
-
-  picker.appendChild(swatch);
-  picker.appendChild(select);
-  picker.appendChild(label);
-  pickersContainer.appendChild(picker);
+  pickersContainer.appendChild(row);
 });
+
+function updateContrastWarnings() {
+  PICKER_DEFS.forEach(def => {
+    const rule = CONTRAST_RULES[def.key];
+    if (!rule) return;
+    const picker = document.getElementById(`picker-${def.key}`);
+    const swatch = picker.querySelector('.picker-swatch');
+    const passes = passesContrast(def.key, state[def.key]);
+    swatch.classList.toggle('contrast-warn', !passes);
+  });
+}
 
 function refreshSwatchUI() {
   PICKER_DEFS.forEach(def => {
     const picker = document.getElementById(`picker-${def.key}`);
     const select = picker.querySelector('select');
     const swatch = picker.querySelector('.picker-swatch');
-    select.value = state[def.key];
-    swatch.style.background = getSwatchColor(state[def.key], def.options);
+
+    // Rebuild options to reflect current contrast state
+    select.innerHTML = '';
+    select.disabled = false;
+
+    const isDarkBg = BG_OPTIONS[state.frontBg] && BG_OPTIONS[state.frontBg].dark;
+    if (def.key === 'frontLogo' && isDarkBg) {
+      const opt = document.createElement('option');
+      opt.value = state[def.key];
+      opt.textContent = 'White (auto)';
+      opt.selected = true;
+      select.appendChild(opt);
+      select.disabled = true;
+      swatch.style.background = '#FFFFFF';
+    } else {
+      Object.keys(def.options).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        if (name === state[def.key]) opt.selected = true;
+        const rule = CONTRAST_RULES[def.key];
+        if (rule && rule.mode === 'hard' && !passesContrast(def.key, name)) {
+          opt.disabled = true;
+          opt.textContent = name + ' (low contrast)';
+        }
+        select.appendChild(opt);
+      });
+      swatch.style.background = getSwatchColor(state[def.key], def.options);
+    }
   });
+  updateContrastWarnings();
 }
 
 // ═══ Randomize ═══
