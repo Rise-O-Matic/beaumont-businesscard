@@ -599,6 +599,13 @@
       gap: 0.75rem;
       perspective: 1200px;
       animation: saved-arrive 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+      cursor: pointer;
+      border-radius: 12px;
+      padding: 0.75rem;
+      transition: background 0.2s;
+    }
+    .saved-card:hover {
+      background: rgba(21, 66, 74, 0.04);
     }
 
     @keyframes saved-arrive {
@@ -822,7 +829,7 @@
     </div>
 
     <div class="builder-actions">
-      <button class="btn btn-randomize" id="btn-randomize">Randomize</button>
+      <button class="btn btn-randomize" id="btn-randomize">Randomize Colors</button>
       <button class="btn btn-reset" id="btn-reset">Reset</button>
       <button class="btn btn-save" id="btn-save">Add to Gallery</button>
       <div class="export-dropdown" id="export-dropdown">
@@ -959,6 +966,23 @@ let state = {
   backFooter:   'San Gorgonio Blue',
 };
 
+// Track the last saved/loaded state so we can detect unsaved changes
+let lastSavedState = { ...state };
+
+function stateIsDirty() {
+  return Object.keys(state).some(k => state[k] !== lastSavedState[k]);
+}
+
+// Prompt to save unsaved changes before loading a different scheme.
+// Returns true if the caller should proceed with the load, false to cancel.
+function confirmBeforeLoad() {
+  if (!stateIsDirty()) return true;
+  const choice = confirm(
+    'You have unsaved changes to the current card.\n\nPress OK to discard them, or Cancel to go back and save first.'
+  );
+  return choice;
+}
+
 function applyState() {
   const bgOpt = BG_OPTIONS[state.frontBg];
   const isDark = bgOpt.dark;
@@ -1020,14 +1044,14 @@ function applyState() {
 // Only shrink font when even 2 lines overflow the max-height.
 function autoScaleName(el) {
   const MAX = 2.1, MIN = 0.8, STEP = 0.05;
+  const SLOP = 2; // contenteditable scrollHeight is always ~2px over clientHeight
   el.style.fontSize = MAX + 'rem';
-  el.style.maxHeight = (MAX * 1.25 * 2) + 'rem';
-  if (el.scrollHeight <= el.clientHeight) return;
+  el.style.maxHeight = '';
+  if (el.scrollHeight - el.clientHeight <= SLOP) return;
   let size = MAX;
-  while (size > MIN && el.scrollHeight > el.clientHeight) {
+  while (size > MIN && el.scrollHeight - el.clientHeight > SLOP) {
     size -= STEP;
     el.style.fontSize = size + 'rem';
-    el.style.maxHeight = (size * 1.25 * 2) + 'rem';
   }
 }
 
@@ -1353,12 +1377,14 @@ document.getElementById('btn-randomize').addEventListener('click', () => {
 
 // ═══ Reset to Original BLD Theme ═══
 document.getElementById('btn-reset').addEventListener('click', () => {
+  if (!confirmBeforeLoad()) return;
   state = {
     frontBg: 'White / Cream',
     frontLogo: 'San Gorgonio Blue', frontAccent1: 'San Gorgonio Blue', frontAccent2: 'Sage',
     backLogo: 'San Gorgonio Blue', backAccent1: 'San Gorgonio Blue', backAccent2: 'Sage',
     backText: 'San Gorgonio Blue', backFooter: 'San Gorgonio Blue',
   };
+  lastSavedState = { ...state };
   refreshSwatchUI();
   applyState();
 });
@@ -1472,6 +1498,7 @@ document.getElementById('btn-spec').addEventListener('click', () => {
 // ═══ Load from URL hash on page load ═══
 if (window.location.hash.startsWith('#custom=')) {
   if (hashToState(window.location.hash)) {
+    lastSavedState = { ...state };
     refreshSwatchUI();
     setTimeout(() => document.querySelector('.builder').scrollIntoView({ behavior: 'smooth' }), 500);
   }
@@ -1553,17 +1580,34 @@ function renderSaved() {
     container.appendChild(card);
   });
 
-  // Load buttons
+  // Shared load logic for both card clicks and load buttons
+  function loadByIndex(idx) {
+    const item = getSaved()[idx];
+    if (!item) return;
+    if (!confirmBeforeLoad()) return;
+    state = { ...item.state };
+    lastSavedState = { ...state };
+    refreshSwatchUI();
+    applyState();
+    showToast(`Loaded "${item.name}"`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // Click anywhere on a saved card to load it
+  container.querySelectorAll('.saved-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      // Don't load if user clicked the delete button
+      if (e.target.closest('.saved-btn-delete')) return;
+      const loadBtn = card.querySelector('.saved-btn-load');
+      if (loadBtn) loadByIndex(parseInt(loadBtn.dataset.idx));
+    });
+  });
+
+  // Load buttons (kept for discoverability)
   container.querySelectorAll('.saved-btn-load').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const idx = parseInt(btn.dataset.idx);
-      const item = getSaved()[idx];
-      state = { ...item.state };
-      refreshSwatchUI();
-      applyState();
-      showToast(`Loaded "${item.name}"`);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      loadByIndex(parseInt(btn.dataset.idx));
     });
   });
 
@@ -1639,6 +1683,7 @@ document.getElementById('btn-save').addEventListener('click', () => {
   });
   if (saved.length > 20) saved.length = 20;
   setSaved(saved);
+  lastSavedState = { ...state };
   renderSaved();
   showToast(`Saved "${name.trim()}"`);
 
