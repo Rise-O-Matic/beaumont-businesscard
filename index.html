@@ -286,6 +286,14 @@
       overflow-wrap: anywhere;
     }
 
+    .front-channels .contact-text {
+      font-weight: 700;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
     .editable-contact {
       outline: none;
       display: inline-block;
@@ -897,7 +905,7 @@
 <h1 class="page-title">Beaumont Library District Business Card Color Builder</h1>
 <p class="page-subtitle">Customize your BLD business card colors &middot; 3.5&Prime; &times; 2&Prime; standard</p>
 <div class="page-instructions">
-  <p><strong>How to use:</strong> Choose colors for each element using the swatches below each card. Click directly on the <em>Name</em>, <em>Job Title</em>, <em>Phone</em>, and <em>Email</em> fields on the back face to type your own text. Use your own direct line, the main library line, or a number with an extension &mdash; whatever fits. Use <em>Randomize</em> to generate a random color combination, or <em>Reset</em> to return to the default theme. When you&rsquo;re happy with a design, click <em>Add to Gallery</em> to save it. Saved cards appear in the gallery below where you can compare, rename, or delete them. Use <em>Export PDF</em> to download a print-ready file with crop marks and bleed.</p>
+  <p><strong>How to use:</strong> Choose colors for each element using the swatches below each card. Click directly on the <em>Name</em>, <em>Job Title</em>, <em>Phone</em>, and <em>Email</em> fields on the back face to type your own text. Use your own direct line, the main library line, or a number with an extension &mdash; whatever fits. Uncheck <em>Show main number under address</em> to avoid repeating the main number in both contact areas. Use <em>Randomize</em> to generate a random color combination, or <em>Reset</em> to return to the default theme. When you&rsquo;re happy with a design, click <em>Add to Gallery</em> to save it. Saved cards appear in the gallery below where you can compare, rename, or delete them. Use <em>Export PDF</em> to download a print-ready file with crop marks and bleed.</p>
 </div>
 
 <!-- ══════════════════════════════════════
@@ -932,7 +940,7 @@
           <div class="back-org" id="custom-org">
             <div>125 E. Eighth Street</div>
             <div>Beaumont, CA 92223</div>
-            <div>(951) 845-1357</div>
+            <div class="back-org-phone" id="custom-org-phone">(951) 845-1357</div>
           </div>
           <div class="back-identity" id="custom-identity">
             <div class="back-name" id="custom-name" contenteditable="true" spellcheck="false">Kelly Van Valkenburg</div>
@@ -948,6 +956,10 @@
           </div>
         </div>
         <div class="card-pickers" id="back-pickers"></div>
+        <label class="content-toggle">
+          <input type="checkbox" id="show-address-phone" checked>
+          <span>Show main number under address</span>
+        </label>
       </div>
     </div>
 
@@ -1213,6 +1225,7 @@ function applyState() {
 
   // Branch address, reversed out of the band when it's dark
   document.getElementById('custom-org').style.color = bandDark ? '#FFFFFF' : txt;
+  document.getElementById('custom-org-phone').hidden = !document.getElementById('show-address-phone').checked;
 
   // Name + personal details
   document.getElementById('custom-name').style.color = txt;
@@ -1338,6 +1351,8 @@ function applyStateToCard(cardEl, s, text) {
     const phoneEl = cardEl.querySelector('.saved-flip-back .saved-phone');
     if (phoneEl) phoneEl.textContent = (text.phone || '').trim() || '(951) 845-1357';
   }
+  const orgPhoneEl = cardEl.querySelector('.saved-flip-back .back-org-phone');
+  if (orgPhoneEl) orgPhoneEl.hidden = !!text && text.showAddressPhone === false;
 }
 
 // ═══ Actual-size live preview (mirrors the builder; back by default, front on hover) ═══
@@ -1354,6 +1369,11 @@ function updateLivePreview() {
 // Keep the preview in sync as the editable text fields change
 ['custom-name', 'custom-jobtitle', 'custom-email', 'custom-phone'].forEach(id => {
   document.getElementById(id).addEventListener('input', updateLivePreview);
+});
+
+document.getElementById('show-address-phone').addEventListener('change', () => {
+  document.getElementById('custom-org-phone').hidden = !document.getElementById('show-address-phone').checked;
+  updateLivePreview();
 });
 
 // ═══ Card HTML templates ═══
@@ -1380,7 +1400,7 @@ function cardBackHTML() {
     <div class="back-org">
       <div>125 E. Eighth Street</div>
       <div>Beaumont, CA 92223</div>
-      <div>(951) 845-1357</div>
+      <div class="back-org-phone">(951) 845-1357</div>
     </div>
     <div class="back-identity">
       <div class="back-name">Kelly Van Valkenburg</div>
@@ -1636,6 +1656,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     backText: 'San Gorgonio Blue', backFooter: 'Sage',
   };
   lastSavedState = { ...state };
+  document.getElementById('show-address-phone').checked = true;
   refreshSwatchUI();
   applyState();
 });
@@ -1833,6 +1854,7 @@ function renderSaved() {
     if (!confirmBeforeLoad()) return;
     state = { ...item.state };
     lastSavedState = { ...state };
+    document.getElementById('show-address-phone').checked = !item.text || item.text.showAddressPhone !== false;
     refreshSwatchUI();
     applyState();
     // Restore saved text fields
@@ -1844,6 +1866,7 @@ function renderSaved() {
       autoScaleName(document.getElementById('custom-name'));
       autoScaleDetails(document.getElementById('custom-back'));
     }
+    updateLivePreview();
     showToast(`Loaded "${item.name}"`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1930,6 +1953,7 @@ function getCardText() {
     jobTitle: document.getElementById('custom-jobtitle').innerText.trim(),
     email: document.getElementById('custom-email').innerText.trim(),
     phone: document.getElementById('custom-phone').innerText.trim(),
+    showAddressPhone: document.getElementById('show-address-phone').checked,
   };
 }
 
